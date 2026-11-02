@@ -1,0 +1,9 @@
+streamlit
+pymupdf
+pandas
+pillow
+sentence-transformers
+chromadb
+python-dotenv
+pydantic
+pytest

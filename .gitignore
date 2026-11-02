@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+my_venv/
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Generated data
+data/processed/*
+!data/processed/.gitkeep
+
+# Vector database
+chroma_db/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
