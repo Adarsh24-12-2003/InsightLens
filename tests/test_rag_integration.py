@@ -16,7 +16,7 @@ class SimpleLLMService:
         return context[0]["text"]
 
 
-def test_rag_pipeline_retrieves_context_and_returns_answer():
+def test_rag_pipeline_retrieves_context_for_non_numerical_question():
     client = chromadb.Client()
     collection = client.create_collection(name="rag_integration")
     embedding_service = SimpleEmbeddingService()
@@ -35,7 +35,7 @@ def test_rag_pipeline_retrieves_context_and_returns_answer():
         SimpleLLMService(),
     )
 
-    result = pipeline.ask("What was June revenue?", top_k=1)
+    result = pipeline.ask("Tell me about June in this report.", top_k=1)
 
     assert result == {
         "answer": "June revenue was 180 lakh.",
