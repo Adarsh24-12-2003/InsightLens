@@ -1,37 +1,49 @@
 
-import os  # Read the API key from the environment.
+"""Build grounded prompts and generate answers with Google's Gemini model."""
 
-from dotenv import load_dotenv  # Load variables from a local .env file.
-from google import genai  # Use Google's Gemini client.
+import os
+
+from dotenv import load_dotenv
+from google import genai
 
 
-class LLMService:  # Encapsulate Gemini-based answer generation.
+class LLMService:
     """Generate answers using retrieved context and Gemini."""
 
-    def __init__(self):  # Initialize the Gemini client and model.
-        load_dotenv()  # Make .env variables available through os.environ.
+    def __init__(self):
+        """Load credentials and create the Gemini client."""
+        load_dotenv()
 
-        api_key = os.getenv("GEMINI_API_KEY")  # Read the Gemini API credential.
+        api_key = os.getenv("GEMINI_API_KEY")
 
-        if not api_key:  # Ensure the client can be authenticated.
-            raise ValueError("GEMINI_API_KEY not found in .env file")  # Report the missing required setting.
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not found in .env file")
 
-        self.client = genai.Client(api_key=api_key)  # Create an authenticated Gemini client.
+        self.client = genai.Client(api_key=api_key)
 
-        self.model = "gemini-2.5-flash"  # Select the model used for answer generation.
+        self.model = "gemini-2.5-flash"
 
-    def generate_answer(self, query: str, context: list) -> str:  # Generate an answer grounded in retrieved context.
-        """Generate an answer using the retrieved documents."""
+    def generate_answer(self, query: str, context: list) -> str:
+        """Send a grounded prompt to Gemini and return its generated answer.
 
-        context_text = "\n\n".join(  # Separate each source and its content with a blank line.
+        Each document's metadata is included with its text so the model can
+        identify the source while answering from the supplied context.
+
+        Args:
+            query: The user's question.
+            context: Retrieved document records containing text and metadata.
+
+        Returns:
+            The answer text returned by Gemini.
+        """
+        context_text = "\n\n".join(
             [
-                f"Source: {item['metadata']}\n"  # Include the document's metadata as its source.
-                f"Content: {item['text']}"  # Include the retrieved document text.
-                for item in context  # Format every retrieved document.
-            ]  # Finish collecting the formatted document strings.
-        )  # Join the formatted documents into one context block.
+                f"Source: {item['metadata']}\n"
+                f"Content: {item['text']}"
+                for item in context
+            ]
+        )
 
-        # Build instructions and provide the retrieved context and user question.
         prompt = f"""
         You are an assistant answering questions about business data.
 
@@ -51,11 +63,11 @@ class LLMService:  # Encapsulate Gemini-based answer generation.
         {query}
 
         Answer:
-        """  # Finish the prompt without changing its text.
+        """
 
-        response = self.client.models.generate_content(  # Request an answer from the configured Gemini model.
-            model=self.model,  # Specify which model should generate the answer.
-            contents=prompt  # Send the complete prompt as model input.
-        )  # Finish the Gemini content-generation request.
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt
+        )
 
-        return response.text  # Return the generated answer text.
+        return response.text

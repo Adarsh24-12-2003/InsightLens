@@ -1,3 +1,5 @@
+"""Test numerical routing and retrieval fallbacks in the RAG pipeline."""
+
 from unittest.mock import Mock
 
 import pytest
@@ -91,11 +93,46 @@ def test_ask_uses_csv_for_monthly_profit_margin():
     }
 
 
+def test_ask_uses_csv_to_compare_profit_margins():
+    pipeline = RAGPipeline()
+
+    result = pipeline.ask(
+        "Did profit margin definitely improve in June compared with May?"
+    )
+
+    assert result == {
+        "answer": (
+            "Yes, profit margin improved from 13.79% in May to 16.11% in "
+            "Jun, an increase of 2.32 percentage points."
+        ),
+        "sources": [{"source": "G3_sales_ground_truth.csv"}],
+    }
+
+
+def test_ask_compares_margin_in_first_mentioned_month_to_second():
+    pipeline = RAGPipeline()
+
+    result = pipeline.ask(
+        "Did profit margin improve in May compared with June?"
+    )
+
+    assert result == {
+        "answer": (
+            "No, profit margin declined from 16.11% in Jun to 13.79% in "
+            "May, a decrease of 2.32 percentage points."
+        ),
+        "sources": [{"source": "G3_sales_ground_truth.csv"}],
+    }
+
+
 def test_non_numerical_question_requires_retrieval_services():
     pipeline = RAGPipeline()
 
     with pytest.raises(
         ValueError,
-        match="Retriever and LLM services are required for non-numerical questions.",
+        match=(
+            "Retriever and LLM services are required for "
+            "non-numerical questions."
+        ),
     ):
         pipeline.ask("What does the report say?")

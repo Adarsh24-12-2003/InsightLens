@@ -1,0 +1,1 @@
+"""Placeholder for extracting chart content into searchable text."""

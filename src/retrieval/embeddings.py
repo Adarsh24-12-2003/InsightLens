@@ -1,21 +1,21 @@
+"""Create vector representations of text for semantic search."""
+
 from sentence_transformers import SentenceTransformer
 
 
 class EmbeddingService:
-    """Generate text embeddings using Sentence Transformers."""
+    """Turn text into numeric vectors with a Sentence Transformers model."""
 
     def __init__(self):
-        """Initialize the embedding service."""
-        self.model = SentenceTransformer(
-            "all-MiniLM-L6-v2"
-        )
+        """Load the model used to encode queries and documents."""
+        self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
     def embed_text(self, text: str) -> list:
-        """Convert a single text into an embedding."""
+        """Return a list of numbers representing one text."""
         embedding = self.model.encode(text)
         return embedding.tolist()
 
     def embed_documents(self, documents: list) -> list:
-        """Convert multiple documents into embeddings."""
+        """Return one vector for each document, in input order."""
         embeddings = self.model.encode(documents)
-        return embeddings.tolist() # tolist() converts numpy array to list for JSON serialization in Streamlit 
+        return embeddings.tolist()

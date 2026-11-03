@@ -1,0 +1,1 @@
+"""Placeholder for the user-facing application entry point."""

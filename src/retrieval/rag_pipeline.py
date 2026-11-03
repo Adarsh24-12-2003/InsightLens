@@ -1,137 +1,259 @@
+"""Route questions to trusted calculations or retrieval-based answers."""
 
-import re  # Match words and month names in questions.
-from pathlib import Path  # Build a path to the sales CSV.
-from typing import Optional  # Mark results that may be absent.
+import re
+from pathlib import Path
+from typing import Optional
 
-from src.analysis.data_analyzer import DataAnalyzer  # Calculate trusted values from the CSV.
-from src.retrieval.retriever import Retriever  # Import the document retrieval component.
-from src.retrieval.llm import LLMService  # Import the answer-generation component.
+from src.analysis.data_analyzer import DataAnalyzer
+from src.retrieval.llm import LLMService
+from src.retrieval.retriever import Retriever
 
-SALES_CSV_PATH = Path(__file__).resolve().parents[2] / "data/raw/G3_sales_ground_truth.csv"  # Locate the source data.
-MONTH_NAMES = {  # Map CSV month abbreviations to full names.
-    "jan": "january",  # Expand January.
-    "feb": "february",  # Expand February.
-    "mar": "march",  # Expand March.
-    "apr": "april",  # Expand April.
-    "may": "may",  # Keep May unchanged.
-    "jun": "june",  # Expand June.
-    "jul": "july",  # Expand July.
-    "aug": "august",  # Expand August.
-    "sep": "september",  # Expand September.
-    "oct": "october",  # Expand October.
-    "nov": "november",  # Expand November.
-    "dec": "december",  # Expand December.
+SALES_CSV_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data/raw/G3_sales_ground_truth.csv"
+)
+MONTH_NAMES = {
+    "jan": "january",
+    "feb": "february",
+    "mar": "march",
+    "apr": "april",
+    "may": "may",
+    "jun": "june",
+    "jul": "july",
+    "aug": "august",
+    "sep": "september",
+    "oct": "october",
+    "nov": "november",
+    "dec": "december",
 }
 
 
-class RAGPipeline:  # Coordinate retrieval and answer generation.
-    """Connect retrieval and answer generation."""
+class RAGPipeline:
+    """Answer business questions with CSV calculations or retrieved documents.
 
-    def __init__(  # Initialize the pipeline and its services.
-        self,  # Refer to this pipeline instance.
-        retriever: Optional[Retriever] = None,  # Allow numerical questions without retrieval.
-        llm: Optional[LLMService] = None,  # Allow numerical questions without an LLM.
-    ):  # Finish the constructor signature.
-        self.retriever = retriever  # Save the document retriever.
-        self.llm = llm  # Save the language model service.
-        self.data_analyzer = DataAnalyzer(str(SALES_CSV_PATH))  # Load trusted numerical data.
+    Questions supported by the sales data are calculated directly. Other
+    questions use retrieval-augmented generation (RAG): find relevant text,
+    then provide that text to a language model as answer context.
+    """
 
-    def ask(self, query: str, top_k: int = 5) -> dict:  # Answer a question using retrieved documents.
-        """Retrieve relevant context and generate an answer."""
+    def __init__(
+        self,
+        retriever: Optional[Retriever] = None,
+        llm: Optional[LLMService] = None,
+    ):
+        """Set up optional retrieval services and load the trusted sales data."""
+        self.retriever = retriever
+        self.llm = llm
+        self.data_analyzer = DataAnalyzer(str(SALES_CSV_PATH))
 
-        if self._asks_highest_revenue(query):  # Handle highest-revenue questions with exact CSV data.
-            result = self.data_analyzer.get_highest_revenue()  # Find the maximum directly from the CSV.
-            return {  # Return the calculated answer and its source.
-                "answer": (  # Format the highest-revenue result.
-                    f"{result['month']} had the highest revenue at "  # State which month was highest.
-                    f"{result['revenue']} lakh INR."  # Include its revenue amount.
-                ),  # Finish formatting the answer.
-                "sources": [{"source": SALES_CSV_PATH.name}],  # Cite the CSV file.
-            }  # Finish the result.
+    def ask(self, query: str, top_k: int = 5) -> dict:
+        """Answer ``query`` and include the sources used.
 
-        monthly_result = self._handle_monthly_question(query)  # Check for a month-specific calculation.
-        if monthly_result:  # Use the result when the question was handled.
-            return monthly_result  # Return the CSV-backed answer.
+        Supported numerical questions are answered from the CSV. Other
+        questions are answered from retrieved context and require both a
+        retriever and a language-model service.
 
-        if self.retriever is None or self.llm is None:  # Ensure services exist for other questions.
-            raise ValueError(  # Report missing dependencies clearly.
-                "Retriever and LLM services are required for non-numerical questions."  # Explain what is required.
-            )  # Finish raising the error.
+        Args:
+            query: The user's question.
+            top_k: Maximum number of documents to retrieve for RAG answers.
 
-        # 1. Retrieve relevant documents.
-        retrieved_documents = self.retriever.retrieve(  # Search for documents matching the question.
-            query=query,  # Pass the user's question.
-            top_k=top_k  # Limit the number of retrieved documents.
-        )  # Store the matching documents.
+        Returns:
+            A dictionary containing the answer and its sources.
 
-        # 2. Check whether any documents were retrieved.
-        if not retrieved_documents:  # Handle an empty retrieval result.
-            return {  # Return a clear answer and no sources.
-                "answer": "I could not find relevant information to answer this question.",  # Explain that no context was found.
-                "sources": []  # Provide an empty source list.
-            }  # Stop without calling the language model.
+        Raises:
+            ValueError: If a non-numerical question needs services that are
+                not configured.
+        """
+        comparison_result = self._handle_margin_comparison(query)
+        if comparison_result:
+            return comparison_result
 
-        # 3. Generate an answer using retrieved context.
-        answer = self.llm.generate_answer(  # Ask the language model to respond.
-            query=query,  # Pass along the original question.
-            context=retrieved_documents  # Ground the response in retrieved documents.
-        )  # Store the generated answer.
+        if self._asks_highest_revenue(query):
+            result = self.data_analyzer.get_highest_revenue()
+            return {
+                "answer": (
+                    f"{result['month']} had the highest revenue at "
+                    f"{result['revenue']} lakh INR."
+                ),
+                "sources": [{"source": SALES_CSV_PATH.name}],
+            }
 
-        # 4. Collect source metadata.
-        sources = [  # Build a list of the documents' source metadata.
-            document["metadata"]  # Select metadata from each document.
-            for document in retrieved_documents  # Visit every retrieved document.
-        ]  # Store the collected source metadata.
+        monthly_result = self._handle_monthly_question(query)
+        if monthly_result:
+            return monthly_result
 
-        # 5. Return answer and sources.
-        return {  # Package the answer and source list together.
-            "answer": answer,  # Include the generated response.
-            "sources": sources  # Include metadata for its supporting documents.
-        }  # Return the pipeline result.
+        if self.retriever is None or self.llm is None:
+            raise ValueError(
+                "Retriever and LLM services are required for "
+                "non-numerical questions."
+            )
 
-    @staticmethod  # This check does not need pipeline state.
-    def _asks_highest_revenue(query: str) -> bool:  # Identify questions asking for maximum revenue.
-        words = set(re.findall(r"\b[a-z]+\b", query.lower()))  # Extract lowercase words from the query.
-        asks_for_maximum = bool(words & {"highest", "most", "maximum", "max"})  # Check for maximum terms.
-        return "revenue" in words and asks_for_maximum  # Require both revenue and a maximum term.
+        retrieved_documents = self.retriever.retrieve(
+            query=query,
+            top_k=top_k
+        )
 
-    def _handle_monthly_question(self, query: str) -> Optional[dict]:  # Handle supported monthly questions.
-        """Handle monthly revenue, profit, and margin questions."""
-        query_lower = query.lower()  # Normalize text for matching.
-        month = next(  # Find the first CSV month mentioned in the query.
+        if not retrieved_documents:
+            return {
+                "answer": (
+                    "I could not find relevant information to "
+                    "answer this question."
+                ),
+                "sources": []
+            }
+
+        answer = self.llm.generate_answer(
+            query=query,
+            context=retrieved_documents
+        )
+
+        sources = [
+            document["metadata"]
+            for document in retrieved_documents
+        ]
+
+        return {
+            "answer": answer,
+            "sources": sources
+        }
+
+    @staticmethod
+    def _asks_highest_revenue(query: str) -> bool:
+        """Return whether ``query`` asks for a revenue maximum."""
+        words = set(re.findall(r"\b[a-z]+\b", query.lower()))
+        asks_for_maximum = bool(words & {"highest", "most", "maximum", "max"})
+        return "revenue" in words and asks_for_maximum
+
+    def _handle_margin_comparison(self, query: str) -> Optional[dict]:
+        """Answer a comparison question using the order in which months appear.
+
+        Month names may use either the CSV abbreviation or the full name.
+        Keeping their positions in the question preserves which month is being
+        evaluated against the comparison month.
+
+        Returns:
+            A CSV-backed answer, or ``None`` if the question does not mention
+            two months and a profit margin.
+        """
+        query_lower = query.lower()
+        if "margin" not in query_lower:
+            return None
+
+        months = {
+            month.lower(): month
+            for month in self.data_analyzer.data["month"]
+        }
+        month_matches = []
+        for normalized_month, month in months.items():
+            full_month = MONTH_NAMES.get(
+                normalized_month,
+                normalized_month
+            )
+            abbreviation_match = re.search(
+                rf"\b{re.escape(normalized_month)}\b",
+                query_lower
+            )
+            full_name_match = re.search(
+                rf"\b{re.escape(full_month)}\b",
+                query_lower
+            )
+            matches = [
+                match for match in (
+                    abbreviation_match,
+                    full_name_match
+                )
+                if match
+            ]
+            if matches:
+                # Sorting by text position preserves the user's comparison order.
+                month_matches.append(
+                    (min(match.start() for match in matches), month)
+                )
+        month_matches.sort(key=lambda item: item[0])
+        if len(month_matches) < 2:
+            return None
+        first_month = month_matches[0][1]
+        second_month = month_matches[1][1]
+
+        result = self.data_analyzer.compare_profit_margins(
+            first_month,
+            second_month,
+        )
+        if "error" in result:
+            return {
+                "answer": result["error"],
+                "sources": [{"source": SALES_CSV_PATH.name}],
+            }
+
+        difference = round(
+            result["first_margin"] - result["second_margin"],
+            2
+        )
+        if difference > 0:
+            answer = (
+                f"Yes, profit margin improved from {result['second_margin']}% in "
+                f"{result['second_month']} to {result['first_margin']}% in "
+                f"{result['first_month']}, an increase of {difference} percentage points."
+            )
+        elif difference == 0:
+            answer = (
+                f"No, profit margin remained at {result['first_margin']}% in "
+                f"{result['first_month']} and {result['second_month']}."
+            )
+        else:
+            answer = (
+                f"No, profit margin declined from {result['second_margin']}% in "
+                f"{result['second_month']} to {result['first_margin']}% in "
+                f"{result['first_month']}, a decrease of "
+                f"{abs(difference)} percentage points."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [{"source": SALES_CSV_PATH.name}],
+        }
+
+    def _handle_monthly_question(self, query: str) -> Optional[dict]:
+        """Answer supported single-month revenue, profit, or margin questions.
+
+        Returns a CSV-backed answer when the question is supported, otherwise
+        ``None`` so the question can continue through the retrieval pipeline.
+        """
+        query_lower = query.lower()
+        month = next(
             (
-                value for value in self.data_analyzer.data["month"]  # Check each month in the CSV.
-                if re.search(rf"\b{re.escape(value.lower())}\b", query_lower)  # Match its exact abbreviation.
-                or re.search(  # Also check the full month name.
-                    rf"\b{re.escape(MONTH_NAMES.get(value.lower(), value.lower()))}\b",  # Convert abbreviation when known.
-                    query_lower,  # Search the normalized query.
-                )  # Finish full-name matching.
-            ),  # Finish selecting a matching month.
-            None,  # Return no month when none is mentioned.
-        )  # Store the matching month, if any.
+                value for value in self.data_analyzer.data["month"]
+                if re.search(rf"\b{re.escape(value.lower())}\b", query_lower)
+                or re.search(
+                    rf"\b{re.escape(MONTH_NAMES.get(value.lower(), value.lower()))}\b",
+                    query_lower,
+                )
+            ),
+            None,
+        )
 
-        if month is None:  # Check whether a month was found.
-            return None  # Let the regular RAG flow handle the question.
+        if month is None:
+            return None
 
-        if "margin" in query_lower:  # Handle questions about profit margin.
-            result = self.data_analyzer.calculate_profit_margin(month)  # Calculate the margin from CSV values.
-            return {  # Return the margin and its source.
-                "answer": (  # Format the margin answer.
-                    f"{result['month']} profit margin was "  # State the month.
-                    f"{result['profit_margin']}%."  # Include the percentage.
-                ),  # Finish formatting the answer.
-                "sources": [{"source": SALES_CSV_PATH.name}],  # Cite the CSV file.
-            }  # Finish the result.
+        if "margin" in query_lower:
+            result = self.data_analyzer.calculate_profit_margin(month)
+            return {
+                "answer": (
+                    f"{result['month']} profit margin was "
+                    f"{result['profit_margin']}%."
+                ),
+                "sources": [{"source": SALES_CSV_PATH.name}],
+            }
 
-        if "revenue" in query_lower or "profit" in query_lower:  # Handle monthly revenue or profit questions.
-            result = self.data_analyzer.get_monthly_data(month)  # Get that month's CSV values.
-            return {  # Return the values and their source.
-                "answer": (  # Format the monthly answer.
-                    f"{result['month']} revenue was "  # State the month and revenue.
-                    f"₹{result['revenue_lakh_inr']} lakh "  # Include revenue in lakh rupees.
-                    f"and profit was ₹{result['profit_lakh_inr']} lakh."  # Include profit in lakh rupees.
-                ),  # Finish formatting the answer.
-                "sources": [{"source": SALES_CSV_PATH.name}],  # Cite the CSV file.
-            }  # Finish the result.
+        if "revenue" in query_lower or "profit" in query_lower:
+            result = self.data_analyzer.get_monthly_data(month)
+            return {
+                "answer": (
+                    f"{result['month']} revenue was "
+                    f"₹{result['revenue_lakh_inr']} lakh "
+                    f"and profit was ₹{result['profit_lakh_inr']} lakh."
+                ),
+                "sources": [{"source": SALES_CSV_PATH.name}],
+            }
 
-        return None  # Leave unrelated monthly questions to the regular RAG flow.
+        return None

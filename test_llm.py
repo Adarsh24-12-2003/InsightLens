@@ -1,5 +1,8 @@
 
+"""Smoke-test Gemini answer generation with retrieved document context."""
+
 from src.retrieval.llm import LLMService
+
 
 llm = LLMService()
 

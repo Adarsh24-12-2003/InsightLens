@@ -1,51 +1,85 @@
+"""Calculate revenue and profit-margin metrics from monthly CSV data."""
 
-import pandas as pd  # Load tools for working with CSV data.
+import pandas as pd
 
 
-class DataAnalyzer:  # Analyze business data from a CSV file.
-    """Perform numerical analysis using verified CSV data."""
+class DataAnalyzer:
+    """Look up monthly sales data and calculate business metrics."""
 
-    def __init__(self, csv_path: str):  # Initialize the analyzer.
-        self.data = pd.read_csv(csv_path)  # Read the CSV into a DataFrame.
+    def __init__(self, csv_path: str):
+        """Load the sales records from ``csv_path``."""
+        self.data = pd.read_csv(csv_path)
 
-    def get_highest_revenue(self) -> dict:  # Find the month with the most revenue.
-        """Find the month with the highest revenue."""
+    def get_highest_revenue(self) -> dict:
+        """Return the month and amount for the highest recorded revenue."""
+        row = self.data.loc[self.data["revenue_lakh_inr"].idxmax()]
 
-        row = self.data.loc[  # Select the row with the highest revenue.
-            self.data["revenue_lakh_inr"].idxmax()  # Find its row index.
-        ]  # Store the selected row.
+        return {
+            "month": row["month"],
+            "revenue": row["revenue_lakh_inr"]
+        }
 
-        return {  # Return the month and its revenue.
-            "month": row["month"],  # Include the month name.
-            "revenue": row["revenue_lakh_inr"]  # Include the revenue amount.
-        }  # Finish the result.
+    def get_monthly_data(self, month: str) -> dict:
+        """Return the row for ``month`` or an error when it is not present.
 
-    def get_monthly_data(self, month: str) -> dict:  # Get data for one month.
-        """Get revenue and profit for a particular month."""
+        Month matching ignores capitalization.
+        """
+        row = self.data[
+            self.data["month"].str.lower() == month.lower()
+        ]
 
-        row = self.data[  # Filter the rows to the requested month.
-            self.data["month"].str.lower() == month.lower()  # Compare month names without case sensitivity.
-        ]  # Store the matching rows.
+        if row.empty:
+            return {"error": f"No data found for {month}"}
 
-        if row.empty:  # Check whether the month was found.
-            return {"error": f"No data found for {month}"}  # Report the missing month.
+        return row.iloc[0].to_dict()
 
-        return row.iloc[0].to_dict()  # Return the first match as a dictionary.
+    def calculate_profit_margin(self, month: str) -> dict:
+        """Calculate a month's profit as a percentage of its revenue.
 
-    def calculate_profit_margin(self, month: str) -> dict:  # Calculate profit as a percentage of revenue.
-        """Calculate profit margin for a particular month."""
+        The calculation divides profit by revenue and multiplies by 100.
+        """
+        result = self.get_monthly_data(month)
 
-        result = self.get_monthly_data(month)  # Get the month's revenue and profit.
+        if "error" in result:
+            return result
 
-        if "error" in result:  # Check whether the month lookup failed.
-            return result  # Pass the error back to the caller.
+        margin = (
+            result["profit_lakh_inr"] / result["revenue_lakh_inr"]
+        ) * 100
 
-        margin = (  # Compute profit divided by revenue as a percentage.
-            result["profit_lakh_inr"]  # Use the month's profit.
-            / result["revenue_lakh_inr"]  # Divide by its revenue.
-        ) * 100  # Convert the ratio to a percentage.
+        return {
+            "month": result["month"],
+            "profit_margin": round(margin, 2)
+        }
 
-        return {  # Return the month and its profit margin.
-            "month": result["month"],  # Include the month name.
-            "profit_margin": round(margin, 2)  # Round the margin to two decimal places.
-        }  # Finish the result.
+    def compare_profit_margins(
+        self,
+        first_month: str,
+        second_month: str
+    ) -> dict:
+        """Compare two months and report the margin change from first to second.
+
+        The difference is measured in percentage points. ``improved`` is true
+        when the second month's margin is higher than the first month's.
+        """
+        first = self.calculate_profit_margin(first_month)
+        second = self.calculate_profit_margin(second_month)
+
+        if "error" in first:
+            return first
+        if "error" in second:
+            return second
+
+        difference = round(
+            second["profit_margin"] - first["profit_margin"],
+            2
+        )
+
+        return {
+            "first_month": first["month"],
+            "first_margin": first["profit_margin"],
+            "second_month": second["month"],
+            "second_margin": second["profit_margin"],
+            "difference": difference,
+            "improved": difference > 0
+        }

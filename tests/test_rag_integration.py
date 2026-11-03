@@ -1,3 +1,5 @@
+"""Test retrieval and answer generation together with a temporary collection."""
+
 import chromadb
 
 from src.retrieval.rag_pipeline import RAGPipeline

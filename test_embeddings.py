@@ -1,17 +1,15 @@
+"""Smoke-test single-text and batch embedding generation."""
+
 from src.retrieval.embeddings import EmbeddingService
 
 
 service = EmbeddingService()
-
-# Test one sentence
 text = "June revenue was 180 lakh"
 
 vector = service.embed_text(text)
 
 print("Single embedding dimension:", len(vector))
 
-
-# Test multiple sentences
 documents = [
     "June revenue was 180 lakh",
     "May revenue was 145 lakh",
