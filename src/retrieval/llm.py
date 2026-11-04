@@ -1,6 +1,7 @@
 
 """Build grounded prompts and generate answers with Google's Gemini model."""
 
+import json
 import os
 
 from dotenv import load_dotenv
@@ -38,23 +39,26 @@ class LLMService:
         """
         context_text = "\n\n".join(
             [
-                f"Source: {item['metadata']}\n"
+                f"Source metadata: {json.dumps(item['metadata'], ensure_ascii=False)}\n"
                 f"Content: {item['text']}"
                 for item in context
             ]
         )
 
         prompt = f"""
-        You are an assistant answering questions about business data.
-
-        Answer the user's question using ONLY the provided context.
-
+        You are InsightLens, a multimodal business data assistant.
+        Answer the user's question using ONLY the retrieved context.
         Rules:
-        1. Do not invent information.
-        2. If the context does not contain the answer, say that
-           sufficient information is not available.
-        3. Keep the answer clear and concise.
-        4. Mention the available sources.
+        1. Never invent facts, numbers, sources, or timestamps.
+        2. If the evidence is insufficient, clearly say so.
+        3. Use exact figures and details from the context.
+        4. Cite the sources that support your answer.
+        5. Include PDF page numbers when available.
+        6. Include transcript timestamps when available.
+        7. Identify chart sources when available.
+        8. Do not create page numbers or timestamps if they are missing.
+        9. If sources disagree, explain the disagreement.
+        10. Keep the answer clear and concise.
 
         Retrieved Context:
         {context_text}
@@ -70,4 +74,4 @@ class LLMService:
             contents=prompt
         )
 
-        return response.text
+        return response.text or "I could not generate an answer based on the provided context."
