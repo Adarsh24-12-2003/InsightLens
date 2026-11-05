@@ -1,0 +1,12 @@
+{
+  "evaluated_at_utc": "2026-11-04T13:11:28.464600+00:00",
+  "questions": 15,
+  "strict_passes": 0,
+  "sha256": {
+    "G3_business_report.pdf": "14e041e96354d46acdbf2206f8fbe328d640b2944a1f0378892c911ee3ac550e",
+    "G3_profit_chart.png": "79f60397ebefa0eeafa33c2c5612d2ecf3dee99fbc01fb862d1e4e5a97c05ae0",
+    "G3_revenue_chart.png": "af0e9b13d1c7594778261c4284d18cd3232a45b1a63365550854abf3f2f8def0",
+    "G3_sales_ground_truth.csv": "0a079b2a5523dd6594dc0baeb6ba1663e5d4234fd934e6a152713512f89a757c",
+    "G3_video_transcript.json": "86bfcd3b607aedcdd267f750abc06b67252483d71689aabec7aae7d9c53eb41e"
+  }
+}
