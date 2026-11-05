@@ -1,7 +1,8 @@
-"""Evaluate real answers against dataset-derived expectations; no model required.
+"""Evaluate real answers against dataset-derived expectations.
 
-Run with ``python -m src.evaluation.evaluate``. To evaluate connected retrieval,
-call ``run_evaluation(pipeline)`` with a configured RAGPipeline instead.
+Run with ``python -m src.evaluation.evaluate`` to evaluate the configured
+retrieval pipeline. Tests may call ``run_evaluation(pipeline)`` with a custom
+pipeline.
 """
 
 import argparse
@@ -13,6 +14,8 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+
+from src.retrieval.pipeline_factory import create_pipeline
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / "data/raw"
@@ -173,7 +176,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'docs/evaluation')
     args = parser.parse_args()
-    results = run_evaluation()
+    pipeline = create_pipeline()
+    results = run_evaluation(pipeline)
     write_artifacts(results, args.output_dir)
     print(f"{len(results)} questions; {sum(r['content_ok'] for r in results)} content matches; "
           f"{sum(r['citation_ok'] for r in results)} complete citations; "

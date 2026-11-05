@@ -86,7 +86,7 @@ def test_runtime_errors_remain_errors(cases):
 def test_real_pipeline_and_export(tmp_path):
     results = run_evaluation()
     assert results[0]['numerical_ok'] is True
-    assert results[0]['actual_sources'] == '[{"source": "G3_sales_ground_truth.csv"}]'
+    assert results[0]['actual_sources'] == '[{"source": "G3_sales_ground_truth.csv", "row": 7}]'
     assert results[10]['error'].startswith('ValueError:')
     write_artifacts(results, tmp_path)
     with (tmp_path / 'evaluation_results.csv').open(encoding='utf-8', newline='') as handle:

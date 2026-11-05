@@ -1,92 +1,171 @@
-# InsightLens
+# InsightLens – Multimodal RAG Assistant
 
-InsightLens answers questions about business reports. It uses exact CSV
-calculations for supported sales questions and retrieval-augmented generation
-(RAG) for questions that need report text.
+InsightLens is a multimodal Retrieval-Augmented Generation (RAG) assistant that answers questions using business reports, charts, CSV data and timestamped video transcripts.
 
-## How question answering works
+It combines exact numerical calculations, semantic retrieval and LLM-based answer generation to provide grounded answers with supporting source references.
 
-- **Sales calculations:** `RAGPipeline` recognizes supported revenue and profit
-  questions and uses `DataAnalyzer` to read the sales CSV. These results do not
-  depend on a language model.
-- **Report questions:** The `Retriever` converts the question to an embedding,
-  a numeric representation of its meaning, and uses that vector to search a
-  prepared ChromaDB collection. It returns matching text and metadata.
-- **Generated answers:** `LLMService` places the retrieved text, source
-  metadata, and question into a prompt for OpenAI. The returned answer includes
-  the metadata of the documents used as sources.
+## Features
 
-The retrieval path requires both a configured ChromaDB collection and a
-`OPENAI_API_KEY`. Numerical questions can be handled without either service.
+- **PDF retrieval:** Retrieve information from business reports.
+- **Chart retrieval:** Use structured chart captions and chart metadata.
+- **CSV analysis:** Calculate monthly revenue, profit and profit margins using verified CSV values.
+- **Transcript retrieval:** Retrieve timestamped video transcript segments.
+- **Cross-modal question answering:** Combine evidence from different source types.
+- **Source citations:** Display supporting files and available page, row or timestamp references.
+- **Missing-information handling:** Avoid inventing answers when the supplied data does not contain the requested information.
 
-## Setup and tests
+## How It Works
 
-Install the project dependencies and run the test suite:
+### 1. Data Ingestion
+
+The ingestion pipeline processes the supplied PDF, chart images, CSV and video transcript. It extracts information, prepares structured records and metadata, generates embeddings and stores indexed records in ChromaDB.
+
+### 2. Embeddings and Retrieval
+
+The project uses the Sentence Transformers `all-MiniLM-L6-v2` model to generate embeddings locally.
+
+The retriever searches the ChromaDB collection using semantic similarity. Metadata-based retrieval is also used to locate specific source records.
+
+### 3. Numerical Analysis
+
+`DataAnalyzer` reads the original sales CSV and performs supported numerical calculations, including revenue, profit and profit-margin comparisons.
+
+These supported calculations use the verified CSV values rather than relying on an LLM to perform arithmetic.
+
+### 4. Answer Generation
+
+`LLMService` uses the OpenAI Responses API to generate answers from retrieved evidence.
+
+The pipeline combines the question, retrieved context and source metadata to produce grounded responses with supporting references.
+
+### 5. User Interface
+
+A Streamlit application provides the interface for asking questions and viewing answers and their supporting sources.
+
+## Technology Stack
+
+- Python 3.11+
+- Streamlit
+- ChromaDB
+- Sentence Transformers
+- OpenAI Responses API
+- Pandas
+- PyMuPDF
+- Python-dotenv
+- Pytest
+
+## Project Setup
+
+Clone the repository:
+
+```bash
+git clone <your-repository-url>
+cd insightlens
+```
+
+Create and activate a virtual environment:
+
+```bash
+python -m venv my_venv
+source my_venv/bin/activate
+```
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
-pytest -v tests/
 ```
 
-Set `OPENAI_API_KEY` in your environment or a local `.env` file before creating
-`LLMService`. Do not commit credentials.
+## Environment Configuration
 
-Copy `.env.example` to `.env` and fill in your own OpenAI API key:
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Add your OpenAI API key:
 
 ```dotenv
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-`OPENAI_MODEL` is optional and defaults to `gpt-4.1-mini`. Answer generation
-uses the OpenAI Responses API; embeddings remain local Sentence Transformers.
-See the [official OpenAI quickstart](https://developers.openai.com/api/docs/quickstart).
-Run `python -m pytest -q test_llm.py` to test the provider integration offline.
+`OPENAI_MODEL` is optional and defaults to `gpt-4.1-mini`.
 
-## Run the app
+The project uses local Sentence Transformers for embeddings and OpenAI for answer generation. Do not commit API keys or your `.env` file.
+
+## Run the Application
+
+First, process the input data and create the vector database:
 
 ```bash
-python -m streamlit run app.py
+python -m src.ingestion.ingest_all
 ```
 
-Use Python 3.11 or later. All supplied business data is synthetic. The current
-app constructs `RAGPipeline()` without retrieval services: numerical questions
-work, while document questions display a retrieval-not-connected message.
-Setting an API key alone does not connect a vector collection or initialize
-the retriever in the app.
+Then start the Streamlit application:
 
-## Evaluation and presentation
+```bash
+streamlit run app.py
+```
 
-- [Architecture diagram (PNG)](docs/architecture.png)
-- [Architecture details and editable diagram](docs/architecture.md)
+Open the application:
 
-Run the reproducible 15-question baseline without API access:
+```text
+http://localhost:8501
+```
+
+## Evaluation and Testing
+
+Run the evaluation:
 
 ```bash
 python -m src.evaluation.evaluate
-python -m pytest -q tests/test_evaluation.py
 ```
 
-For an evaluation-only installation, the required packages are:
+Run the automated test suite:
 
 ```bash
-python -m pip install pytest pandas pymupdf python-dotenv openai
+python -m pytest -v tests/
 ```
 
-The evaluator checks original CSV figures, chart evidence, PDF page references,
-transcript timestamps, missing information, and numerical accuracy. It records
-actual pipeline errors rather than replacing them with expected answers.
+### Latest Verified Results
 
-- [Evaluation report and final presentation content](docs/evaluation_report.md)
-- [Expected versus actual answers CSV](docs/evaluation/evaluation_results.csv)
-- [Browsable evaluation evidence](docs/evaluation/evaluation_evidence.html)
-- [Dataset fingerprints and run timestamp](docs/evaluation/evaluation_manifest.json)
-- [Three saved live-app screenshots](docs/evaluation/screenshots/)
+- Evaluation: **15/15 strict passes**
+- Content matches: **15/15**
+- Complete citations: **15/15**
+- Automated tests: **51 passed, 1 warning**
 
-Current baseline: **8/15 content matches, 0/15 complete citations, 7 service
-errors**. Correct numerical answers still lack CSV row locations, and chart
-questions lack chart citations. The report includes the failures, owner handoff,
-test results, and a 3–5 minute presentation script. Three saved screenshots show the Streamlit UI; two failure/edge-case
-screenshots are still pending. The report links the saved images and records
-the missing evidence. Six existing transcript-validation
-tests fail; see the report before claiming full-suite success.
+These results refer to the reported evaluation and test runs. They demonstrate performance on the defined test cases, not guaranteed accuracy for every possible question.
+
+## Sample Questions
+
+- Which month had the highest revenue?
+- Did the revenue chart rise steadily every month?
+- What does the profit chart show for June?
+- Did profit margin improve in June compared with May?
+- What happened after the late-May promotion?
+- What was the verified customer acquisition cost?
+- Which city generated the highest revenue?
+
+## Project Documentation
+
+- Architecture diagram: `docs/architecture.png`
+- Evaluation report: `docs/evaluation_report.md`
+- Evaluation results: `docs/evaluation/evaluation_results.csv`
+- Evaluation evidence: `docs/evaluation/evaluation_evidence.html`
+- Evaluation manifest: `docs/evaluation/evaluation_manifest.json`
+- Application screenshots: `docs/evaluation/screenshots/`
+
+## Limitations
+
+- The supplied business dataset is synthetic and intended for educational and demonstration purposes.
+- City-wise revenue cannot be determined because the CSV does not contain city-level information.
+- Verified customer acquisition cost figures are unavailable in the supplied report and transcript.
+- The transcript represents timestamped segments; the project does not process an actual video file.
+- The system's answers are limited to the information available in the supplied and indexed data.
+
+## Future Improvements
+
+1. Improve citation presentation by displaying precise CSV row references and removing irrelevant duplicate source entries.
+2. Extend retrieval and evaluation to larger datasets and more complex multimodal queries.

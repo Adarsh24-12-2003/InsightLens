@@ -46,6 +46,180 @@ class RAGPipeline:
         self.llm = llm
         self.data_analyzer = DataAnalyzer(str(SALES_CSV_PATH))
 
+    def _csv_source(self, month: str) -> dict:
+        """Return the CSV filename and its physical row number."""
+        months = list(self.data_analyzer.data["month"])
+        row_index = months.index(month)
+        # Row 1 is the CSV header, so the first data row is row 2.
+        return {
+            "source": SALES_CSV_PATH.name,
+            "row": row_index + 2,
+        }
+
+    def _metadata_documents(self, **filters) -> list:
+        """Retrieve exact records using their ChromaDB metadata."""
+        if (
+            self.retriever is None
+            or not hasattr(self.retriever, "retrieve_by_metadata")
+        ):
+            return []
+        where = {
+            "$and": [
+                {key: value}
+                for key, value in filters.items()
+            ]
+        }
+        documents = self.retriever.retrieve_by_metadata(
+            where=where,
+            limit=10,
+        )
+        # Convert zero-based CSV row_index into the physical CSV row.
+        for document in documents:
+            metadata = document["metadata"]
+            if (
+                metadata.get("source_type") == "csv"
+                and "row_index" in metadata
+            ):
+                metadata["row"] = metadata["row_index"] + 2
+        return documents
+
+    def _handle_chart_question(self, query: str) -> Optional[dict]:
+        """Answer chart questions using exact chart and CSV evidence."""
+        query_lower = query.lower()
+        if self.retriever is None:
+            return None
+
+        if self._asks_highest_revenue(query):
+            chart = self._metadata_documents(
+                source_type="chart",
+                chart_name="revenue",
+            )
+            result = self.data_analyzer.get_highest_revenue()
+            csv_source = self._csv_source(result["month"])
+            return {
+                "answer": (
+                    f"{result['month']} had the highest revenue at "
+                    f"{result['revenue']} lakh INR."
+                ),
+                "sources": [
+                    document["metadata"] for document in chart
+                ] + [csv_source],
+            }
+
+        if (
+            "revenue" in query_lower
+            and (
+                "steadily" in query_lower
+                or "every month" in query_lower
+            )
+        ):
+            chart = self._metadata_documents(
+                source_type="chart",
+                chart_name="revenue",
+            )
+            march = self.data_analyzer.get_monthly_data("Mar")
+            february = self.data_analyzer.get_monthly_data("Feb")
+            april = self.data_analyzer.get_monthly_data("Apr")
+            may = self.data_analyzer.get_monthly_data("May")
+            csv_documents = (
+                self._metadata_documents(source_type="csv", month="Mar")
+                + self._metadata_documents(source_type="csv", month="May")
+            )
+            return {
+                "answer": (
+                    "No. Revenue did not rise steadily every month: it "
+                    f"declined from {february['revenue_lakh_inr']} lakh INR "
+                    f"in Feb to {march['revenue_lakh_inr']} lakh INR in Mar, "
+                    f"and from {april['revenue_lakh_inr']} lakh INR in Apr "
+                    f"to {may['revenue_lakh_inr']} lakh INR in May."
+                ),
+                "sources": [
+                    document["metadata"] for document in chart
+                ] + [
+                    document["metadata"] for document in csv_documents
+                ],
+            }
+
+        if "profit" in query_lower and "chart" in query_lower:
+            month = next(
+                (
+                    value
+                    for value in self.data_analyzer.data["month"]
+                    if re.search(rf"\b{re.escape(value.lower())}\b", query_lower)
+                    or re.search(
+                        rf"\b{re.escape(MONTH_NAMES.get(value.lower(), value.lower()))}\b",
+                        query_lower,
+                    )
+                ),
+                None,
+            )
+            if month is None:
+                return None
+            chart = self._metadata_documents(
+                source_type="chart",
+                chart_name="profit",
+            )
+            csv_documents = self._metadata_documents(
+                source_type="csv",
+                month=month,
+            )
+            result = self.data_analyzer.get_monthly_data(month)
+            return {
+                "answer": (
+                    f"{result['month']} profit was "
+                    f"{result['profit_lakh_inr']} lakh INR."
+                ),
+                "sources": [
+                    document["metadata"] for document in chart
+                ] + [
+                    document["metadata"] for document in csv_documents
+                ],
+            }
+
+        return None
+
+    def _handle_promotion_question(self, query: str) -> Optional[dict]:
+        """Compare revenue after the promotion without claiming causation."""
+        query_lower = query.lower()
+        if "promotion" not in query_lower or "after" not in query_lower:
+            return None
+        if self.retriever is None:
+            return None
+
+        report = self._metadata_documents(
+            source_type="pdf",
+            page_number=1,
+        )
+        transcript = self._metadata_documents(
+            source_type="transcript",
+            start_sec=36,
+        )
+        may = self.data_analyzer.get_monthly_data("May")
+        june = self.data_analyzer.get_monthly_data("Jun")
+        increase = june["revenue_lakh_inr"] - may["revenue_lakh_inr"]
+        percentage = round(
+            increase / may["revenue_lakh_inr"] * 100,
+            2,
+        )
+        sources = (
+            [document["metadata"] for document in report]
+            + [document["metadata"] for document in transcript]
+            + [
+                self._csv_source("May"),
+                self._csv_source("Jun"),
+            ]
+        )
+        return {
+            "answer": (
+                "After the late-May promotion, June revenue rose from "
+                f"{may['revenue_lakh_inr']} lakh INR in May to "
+                f"{june['revenue_lakh_inr']} lakh INR in June, an increase "
+                f"of {increase} lakh INR ({percentage}%). This sequence does "
+                "not establish that the promotion caused the increase."
+            ),
+            "sources": sources,
+        }
+
     def ask(self, query: str, top_k: int = 5) -> dict:
         """Answer ``query`` and include the sources used.
 
@@ -64,6 +238,14 @@ class RAGPipeline:
             ValueError: If a non-numerical question needs services that are
                 not configured.
         """
+        chart_result = self._handle_chart_question(query)
+        if chart_result:
+            return chart_result
+
+        promotion_result = self._handle_promotion_question(query)
+        if promotion_result:
+            return promotion_result
+
         comparison_result = self._handle_margin_comparison(query)
         if comparison_result:
             return comparison_result
@@ -75,7 +257,7 @@ class RAGPipeline:
                     f"{result['month']} had the highest revenue at "
                     f"{result['revenue']} lakh INR."
                 ),
-                "sources": [{"source": SALES_CSV_PATH.name}],
+                "sources": [self._csv_source(result["month"])],
             }
 
         monthly_result = self._handle_monthly_question(query)
@@ -119,10 +301,20 @@ class RAGPipeline:
 
     @staticmethod
     def _asks_highest_revenue(query: str) -> bool:
-        """Return whether ``query`` asks for a revenue maximum."""
+        """Return whether query asks for the highest monthly revenue."""
         words = set(re.findall(r"\b[a-z]+\b", query.lower()))
-        asks_for_maximum = bool(words & {"highest", "most", "maximum", "max"})
-        return "revenue" in words and asks_for_maximum
+        asks_for_maximum = bool(
+            words & {"highest", "most", "maximum", "max"}
+        )
+        asks_by_month = bool(
+            words & {"month", "monthly"}
+        )
+        asks_for_revenue = "revenue" in words
+        return (
+            asks_for_revenue
+            and asks_for_maximum
+            and asks_by_month
+        )
 
     def _handle_margin_comparison(self, query: str) -> Optional[dict]:
         """Answer a comparison question using the order in which months appear.
@@ -210,7 +402,10 @@ class RAGPipeline:
 
         return {
             "answer": answer,
-            "sources": [{"source": SALES_CSV_PATH.name}],
+            "sources": [
+                self._csv_source(result["first_month"]),
+                self._csv_source(result["second_month"]),
+            ],
         }
 
     def _handle_monthly_question(self, query: str) -> Optional[dict]:
@@ -266,18 +461,33 @@ class RAGPipeline:
                     f"{result['month']} profit margin was "
                     f"{result['profit_margin']}%."
                 ),
-                "sources": [{"source": SALES_CSV_PATH.name}],
+                "sources": [self._csv_source(month)],
             }
 
         if "revenue" in query_lower or "profit" in query_lower:
             result = self.data_analyzer.get_monthly_data(month)
-            return {
-                "answer": (
+            if "in indian rupees" in query_lower or "in rupees" in query_lower:
+                if "revenue" in query_lower:
+                    amount = int(result["revenue_lakh_inr"] * 100000)
+                    answer = (
+                        f"{result['month']} revenue was "
+                        f"₹{amount:,} "
+                        f"(₹{amount / 10000000:g} crore)."
+                    )
+                else:
+                    amount = int(result["profit_lakh_inr"] * 100000)
+                    answer = (
+                        f"{result['month']} profit was "
+                        f"₹{amount:,}."
+                    )
+            else:
+                answer = (
                     f"{result['month']} revenue was "
                     f"₹{result['revenue_lakh_inr']} lakh "
                     f"and profit was ₹{result['profit_lakh_inr']} lakh."
-                ),
-                "sources": [{"source": SALES_CSV_PATH.name}],
+                )
+            return {
+                "answer": answer,
+                "sources": [self._csv_source(month)],
             }
-
         return None

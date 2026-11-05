@@ -3,7 +3,7 @@ import re
 
 import streamlit as st
 
-from src.retrieval.rag_pipeline import RAGPipeline
+from src.retrieval.pipeline_factory import create_pipeline
 
 
 def rewrite_follow_up(original_question, follow_up):
@@ -42,8 +42,7 @@ st.set_page_config(
 
 @st.cache_resource
 def load_pipeline():
-    # Reuse the pipeline across Streamlit reruns instead of rebuilding it.
-    return RAGPipeline()
+    return create_pipeline()
 
 
 pipeline = load_pipeline()
@@ -67,8 +66,18 @@ for message in st.session_state.messages:
         if message.get("sources"):
             st.caption("Sources:")
             for source in message["sources"]:
-                source_name = source.get("source", "Unknown source")
-                st.write(f"📄 {source_name}")
+                source_name = (
+                    source.get("source_name")
+                    or source.get("source_filename")
+                    or source.get("source")
+                    or "Unknown source"
+                )
+                citation = f"📄 {source_name}"
+                if source.get("page_number"):
+                    citation += f" — Page {source['page_number']}"
+                if source.get("start_time") and source.get("end_time"):
+                    citation += f" — {source['start_time']}–{source['end_time']}"
+                st.write(citation)
 
 
 # Streamlit reruns the app after each chat input; handle only a new prompt.
@@ -133,8 +142,18 @@ if prompt := st.chat_input("Ask a question about the business data..."):
             if sources:
                 st.caption("Sources:")
                 for source in sources:
-                    source_name = source.get("source", "Unknown source")
-                    st.write(f"📄 {source_name}")
+                    source_name = (
+                        source.get("source_name")
+                        or source.get("source_filename")
+                        or source.get("source")
+                        or "Unknown source"
+                    )
+                    citation = f"📄 {source_name}"
+                    if source.get("page_number"):
+                        citation += f" — Page {source['page_number']}"
+                    if source.get("start_time") and source.get("end_time"):
+                        citation += f" — {source['start_time']}–{source['end_time']}"
+                    st.write(citation)
 
     st.session_state.messages.append(
         {
