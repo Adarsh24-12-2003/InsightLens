@@ -216,10 +216,34 @@ class RAGPipeline:
     def _handle_monthly_question(self, query: str) -> Optional[dict]:
         """Answer supported single-month revenue, profit, or margin questions.
 
+        Causal questions are left for document retrieval because monthly sales
+        figures alone cannot establish what caused a change.
+
         Returns a CSV-backed answer when the question is supported, otherwise
         ``None`` so the question can continue through the retrieval pipeline.
         """
         query_lower = query.lower()
+        if re.search(
+            r"\b(caus(?:e|es|ed|ing)|because|due to|impact|effect|"
+            r"influenc(?:e|es|ed|ing)|contribut(?:e|es|ed|ing)|"
+            r"driven by|lead to|led to|result in|resulted in|"
+            r"resulted from|attribut(?:e|es|ed|ing))\b",
+            query_lower,
+        ):
+            # Do not present a correlation in the CSV as a proven cause.
+            return None
+
+        requested_year = re.search(r"\b\d{4}\b", query)
+        if requested_year:
+            # The sales CSV has no year column, so year-specific figures cannot be verified.
+            return {
+                "answer": (
+                    "The sales dataset does not contain year information. "
+                    f"I cannot confirm the figures for {requested_year.group()}."
+                ),
+                "sources": [{"source": str(SALES_CSV_PATH)}],
+            }
+
         month = next(
             (
                 value for value in self.data_analyzer.data["month"]
