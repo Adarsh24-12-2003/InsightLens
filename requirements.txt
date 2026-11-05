@@ -7,3 +7,4 @@ chromadb
 python-dotenv
 pydantic
 pytest
+openai>=1.66.0,<3

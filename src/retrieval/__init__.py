@@ -1,0 +1,1 @@
+"""Embedding, vector search, and answer-generation components."""
